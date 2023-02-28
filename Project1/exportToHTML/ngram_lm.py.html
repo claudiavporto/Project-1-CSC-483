@@ -1,0 +1,409 @@
+<html>
+<head>
+<title>ngram_lm.py</title>
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+<style type="text/css">
+.s0 { color: #cc7832;}
+.s1 { color: #a9b7c6;}
+.s2 { color: #808080;}
+.s3 { color: #6a8759;}
+.s4 { color: #629755; font-style: italic;}
+.s5 { color: #6897bb;}
+</style>
+</head>
+<body bgcolor="#2b2b2b">
+<table CELLSPACING=0 CELLPADDING=5 COLS=1 WIDTH="100%" BGCOLOR="#606060" >
+<tr><td><center>
+<font face="Arial, Helvetica" color="#000000">
+ngram_lm.py</font>
+</center></td></tr></table>
+<pre><span class="s0">import </span><span class="s1">math</span><span class="s0">, </span><span class="s1">random</span>
+
+<span class="s2"># PLEASE do not delete or modify the comments that divide the code</span>
+<span class="s2"># into sections, like the following comment.</span>
+
+<span class="s2">################################################################################</span>
+<span class="s2"># Utility Functions</span>
+<span class="s2">################################################################################</span>
+
+<span class="s1">COUNTRY_CODES = [</span><span class="s3">'af'</span><span class="s0">, </span><span class="s3">'cn'</span><span class="s0">, </span><span class="s3">'de'</span><span class="s0">, </span><span class="s3">'fi'</span><span class="s0">, </span><span class="s3">'fr'</span><span class="s0">, </span><span class="s3">'in'</span><span class="s0">, </span><span class="s3">'ir'</span><span class="s0">, </span><span class="s3">'pk'</span><span class="s0">, </span><span class="s3">'za'</span><span class="s1">]</span>
+
+
+<span class="s0">def </span><span class="s1">start_pad(c):</span>
+    <span class="s4">''' Returns a padding string of length c to append to the front of text 
+        as a pre-processing step to building n-grams. c = n-1 '''</span>
+    <span class="s0">return </span><span class="s3">'~' </span><span class="s1">* c</span>
+
+
+<span class="s0">def </span><span class="s1">ngrams(c</span><span class="s0">, </span><span class="s1">text):</span>
+    <span class="s4">''' Returns the ngrams of the text as tuples where the first element is 
+        the length-c context and the second is the character '''</span>
+    <span class="s1">ngram_text = start_pad(c) + text</span>
+    <span class="s1">ngram_list = []</span>
+    <span class="s0">for </span><span class="s1">i </span><span class="s0">in </span><span class="s1">range(len(ngram_text) - c):</span>
+        <span class="s1">context = ngram_text[i:i + c]</span>
+        <span class="s1">char = ngram_text[i + c]</span>
+        <span class="s1">ngram = (context</span><span class="s0">, </span><span class="s1">char)</span>
+        <span class="s1">ngram_list.append(ngram)</span>
+
+    <span class="s0">return </span><span class="s1">ngram_list</span>
+
+
+<span class="s0">def </span><span class="s1">create_ngram_model(model_class</span><span class="s0">, </span><span class="s1">path</span><span class="s0">, </span><span class="s1">c=</span><span class="s5">2</span><span class="s0">, </span><span class="s1">k=</span><span class="s5">0</span><span class="s1">):</span>
+    <span class="s4">''' Creates and returns a new n-gram model trained on the entire text 
+        found in the path file '''</span>
+    <span class="s1">model = model_class(c</span><span class="s0">, </span><span class="s1">k)</span>
+    <span class="s0">with </span><span class="s1">open(path</span><span class="s0">, </span><span class="s1">encoding=</span><span class="s3">'utf-8'</span><span class="s0">, </span><span class="s1">errors=</span><span class="s3">'ignore'</span><span class="s1">) </span><span class="s0">as </span><span class="s1">f:</span>
+        <span class="s1">model.update(f.read())</span>
+    <span class="s0">return </span><span class="s1">model</span>
+
+
+<span class="s0">def </span><span class="s1">create_ngram_model_lines(model_class</span><span class="s0">, </span><span class="s1">path</span><span class="s0">, </span><span class="s1">c=</span><span class="s5">2</span><span class="s0">, </span><span class="s1">k=</span><span class="s5">0</span><span class="s1">):</span>
+    <span class="s4">'''Creates and returns a new n-gram model trained line by line on the 
+        text found in the path file. '''</span>
+    <span class="s1">model = model_class(c</span><span class="s0">, </span><span class="s1">k)</span>
+    <span class="s0">with </span><span class="s1">open(path</span><span class="s0">, </span><span class="s1">encoding=</span><span class="s3">'utf-8'</span><span class="s0">, </span><span class="s1">errors=</span><span class="s3">'ignore'</span><span class="s1">) </span><span class="s0">as </span><span class="s1">f:</span>
+        <span class="s0">for </span><span class="s1">line </span><span class="s0">in </span><span class="s1">f:</span>
+            <span class="s1">model.update(line.strip())</span>
+    <span class="s0">return </span><span class="s1">model</span>
+
+
+<span class="s2">################################################################################</span>
+<span class="s2"># Basic N-Gram Model</span>
+<span class="s2">################################################################################</span>
+
+<span class="s0">class </span><span class="s1">NgramModel(object):</span>
+    <span class="s4">''' A basic n-gram model using add-k smoothing '''</span>
+
+    <span class="s0">def </span><span class="s1">__init__(self</span><span class="s0">, </span><span class="s1">c</span><span class="s0">, </span><span class="s1">k):</span>
+        <span class="s1">self.__c = c</span>
+        <span class="s1">self.__k = k</span>
+        <span class="s1">self.__vocab = set()</span>
+        <span class="s1">self.__ngrams = {}</span>
+
+    <span class="s0">def </span><span class="s1">get_vocab(self):</span>
+        <span class="s4">''' Returns the set of characters in the vocab '''</span>
+        <span class="s0">return </span><span class="s1">self.__vocab</span>
+
+    <span class="s0">def </span><span class="s1">update(self</span><span class="s0">, </span><span class="s1">text):</span>
+        <span class="s4">''' Updates the model n-grams based on text '''</span>
+        <span class="s0">for </span><span class="s1">char </span><span class="s0">in </span><span class="s1">text:</span>
+            <span class="s1">self.__vocab.update(char)</span>
+
+        <span class="s1">ngram_list = ngrams(self.__c</span><span class="s0">, </span><span class="s1">text)</span>
+        <span class="s0">for </span><span class="s1">ngram </span><span class="s0">in </span><span class="s1">ngram_list:</span>
+            <span class="s0">if </span><span class="s1">ngram </span><span class="s0">not in </span><span class="s1">self.__ngrams:</span>
+                <span class="s1">self.__ngrams[ngram] = </span><span class="s5">1</span>
+            <span class="s0">else</span><span class="s1">:</span>
+                <span class="s1">self.__ngrams[ngram] += </span><span class="s5">1</span>
+
+    <span class="s0">def </span><span class="s1">prob(self</span><span class="s0">, </span><span class="s1">context</span><span class="s0">, </span><span class="s1">char):</span>
+        <span class="s4">''' Returns the probability of char appearing after context '''</span>
+        <span class="s1">ngram = context</span><span class="s0">, </span><span class="s1">char</span>
+        <span class="s1">ngram_count = </span><span class="s5">0</span>
+        <span class="s1">context_count = self.__context_counter(context)</span>
+        <span class="s0">if </span><span class="s1">context_count != </span><span class="s5">0</span><span class="s1">:</span>
+            <span class="s0">if </span><span class="s1">ngram </span><span class="s0">in </span><span class="s1">self.__ngrams:</span>
+                <span class="s1">ngram_count = self.__ngrams[ngram]</span>
+            <span class="s0">return </span><span class="s1">(ngram_count + self.__k) / (context_count + (self.__k * len(self.__vocab)))</span>
+        <span class="s0">return </span><span class="s5">1 </span><span class="s1">/ len(self.__vocab)</span>
+
+    <span class="s0">def </span><span class="s1">__context_counter(self</span><span class="s0">, </span><span class="s1">context):</span>
+        <span class="s4">'''Returns the count of all ngrams that begin with context char'''</span>
+        <span class="s1">context_counter = </span><span class="s5">0</span>
+        <span class="s0">for </span><span class="s1">ngram</span><span class="s0">, </span><span class="s1">count </span><span class="s0">in </span><span class="s1">self.__ngrams.items():</span>
+            <span class="s0">if </span><span class="s1">ngram[</span><span class="s5">0</span><span class="s1">] == context:</span>
+                <span class="s1">context_counter += count</span>
+
+        <span class="s0">return </span><span class="s1">context_counter</span>
+
+    <span class="s0">def </span><span class="s1">random_char(self</span><span class="s0">, </span><span class="s1">context):</span>
+        <span class="s4">''' Returns a random character based on the given context and the  
+            n-grams learned by this model '''</span>
+        <span class="s1">vocab_sort = sorted(self.__vocab)</span>
+        <span class="s1">r = random.random()</span>
+        <span class="s1">prob = </span><span class="s5">0</span>
+        <span class="s1">i = </span><span class="s5">0</span>
+        <span class="s0">while </span><span class="s1">prob &lt;= r </span><span class="s0">and </span><span class="s1">i &lt; len(vocab_sort):</span>
+            <span class="s1">prob += self.prob(context</span><span class="s0">, </span><span class="s1">vocab_sort[i])</span>
+            <span class="s1">i += </span><span class="s5">1</span>
+
+        <span class="s0">return </span><span class="s1">vocab_sort[i - </span><span class="s5">1</span><span class="s1">]</span>
+
+    <span class="s0">def </span><span class="s1">random_text(self</span><span class="s0">, </span><span class="s1">length):</span>
+        <span class="s4">''' Returns text of the specified character length based on the 
+            n-grams learned by this model '''</span>
+        <span class="s1">text = start_pad(self.__c)</span>
+        <span class="s0">for </span><span class="s1">i </span><span class="s0">in </span><span class="s1">range(length):</span>
+            <span class="s1">context = text[len(text) - self.__c:]</span>
+            <span class="s1">text += self.random_char(context)</span>
+        <span class="s0">return </span><span class="s1">text[self.__c:]</span>
+
+    <span class="s0">def </span><span class="s1">perplexity(self</span><span class="s0">, </span><span class="s1">text):</span>
+        <span class="s4">''' Returns the perplexity of text based on the n-grams learned by 
+            this model '''</span>
+        <span class="s1">ngram_list = ngrams(self.__c</span><span class="s0">, </span><span class="s1">text)</span>
+        <span class="s1">n = len(text)</span>
+        <span class="s1">corpus_prob = </span><span class="s5">0</span>
+        <span class="s0">for </span><span class="s1">ngram </span><span class="s0">in </span><span class="s1">ngram_list:</span>
+            <span class="s1">prob = self.prob(ngram[</span><span class="s5">0</span><span class="s1">]</span><span class="s0">, </span><span class="s1">ngram[</span><span class="s5">1</span><span class="s1">])</span>
+            <span class="s0">if </span><span class="s1">prob != </span><span class="s5">0</span><span class="s1">:</span>
+                <span class="s1">corpus_prob += math.log(prob)</span>
+            <span class="s0">else</span><span class="s1">:</span>
+                <span class="s0">return </span><span class="s1">float(</span><span class="s3">'inf'</span><span class="s1">)</span>
+        <span class="s1">perplexity = math.exp(-(</span><span class="s5">1</span><span class="s1">/n) * corpus_prob)</span>
+
+        <span class="s0">return </span><span class="s1">perplexity</span>
+
+    <span class="s0">def </span><span class="s1">set_k(self</span><span class="s0">, </span><span class="s1">k):</span>
+        <span class="s4">'''sets the value of k for add-k smoothing'''</span>
+        <span class="s1">self.__k = k</span>
+
+    <span class="s0">def </span><span class="s1">prob_str(self</span><span class="s0">, </span><span class="s1">text):</span>
+        <span class="s4">'''returns the n-gram probability of a string'''</span>
+        <span class="s1">ngram_list = ngrams(self.__c</span><span class="s0">, </span><span class="s1">text)</span>
+        <span class="s1">n = len(text)</span>
+        <span class="s1">str_prob = </span><span class="s5">0</span>
+        <span class="s0">for </span><span class="s1">ngram </span><span class="s0">in </span><span class="s1">ngram_list:</span>
+            <span class="s1">prob = self.prob(ngram[</span><span class="s5">0</span><span class="s1">]</span><span class="s0">, </span><span class="s1">ngram[</span><span class="s5">1</span><span class="s1">])</span>
+
+            <span class="s0">if </span><span class="s1">prob != </span><span class="s5">0</span><span class="s1">:</span>
+                <span class="s1">str_prob += math.log(prob)</span>
+            <span class="s0">else</span><span class="s1">:</span>
+                <span class="s0">return </span><span class="s1">float(</span><span class="s3">'inf'</span><span class="s1">)</span>
+
+        <span class="s0">return </span><span class="s1">str_prob</span>
+
+<span class="s2">################################################################################</span>
+<span class="s2"># N-Gram Model with Interpolation</span>
+<span class="s2">################################################################################</span>
+
+<span class="s0">class </span><span class="s1">NgramModelWithInterpolation(NgramModel):</span>
+    <span class="s4">''' An n-gram model with interpolation '''</span>
+
+    <span class="s0">def </span><span class="s1">__init__(self</span><span class="s0">, </span><span class="s1">c</span><span class="s0">, </span><span class="s1">k):</span>
+        <span class="s1">super().__init__(c</span><span class="s0">, </span><span class="s1">k)</span>
+        <span class="s1">self.__lambdas = []</span>
+        <span class="s0">for </span><span class="s1">i </span><span class="s0">in </span><span class="s1">range(c + </span><span class="s5">1</span><span class="s1">):</span>
+            <span class="s1">self.__lambdas.append(</span><span class="s5">1</span><span class="s1">/(c + </span><span class="s5">1</span><span class="s1">))</span>
+
+    <span class="s0">def </span><span class="s1">get_vocab(self):</span>
+        <span class="s4">''' Returns the set of characters in the vocab '''</span>
+        <span class="s0">return </span><span class="s1">self.__vocab</span>
+
+    <span class="s0">def </span><span class="s1">update_lambdas(self</span><span class="s0">, </span><span class="s1">lambdas: list):</span>
+        <span class="s4">'set the lambda values for interpolation'</span>
+        <span class="s1">self.__lambdas = lambdas</span>
+
+    <span class="s0">def </span><span class="s1">update(self</span><span class="s0">, </span><span class="s1">text):</span>
+        <span class="s4">''' Updates the model n-grams based on text '''</span>
+        <span class="s0">for </span><span class="s1">char </span><span class="s0">in </span><span class="s1">text:</span>
+            <span class="s0">if </span><span class="s1">char </span><span class="s0">not in </span><span class="s1">super().get_vocab():</span>
+                <span class="s1">self._NgramModel__vocab.update(char)</span>
+
+        <span class="s1">order_ngrams = []</span>
+        <span class="s0">for </span><span class="s1">i </span><span class="s0">in </span><span class="s1">range(self._NgramModel__c + </span><span class="s5">1</span><span class="s1">):</span>
+            <span class="s1">ngram_list = ngrams(i</span><span class="s0">, </span><span class="s1">text)</span>
+            <span class="s1">order_ngrams.append(ngram_list)</span>
+
+        <span class="s0">for </span><span class="s1">ngram_list </span><span class="s0">in </span><span class="s1">order_ngrams:</span>
+            <span class="s0">for </span><span class="s1">ngram </span><span class="s0">in </span><span class="s1">ngram_list:</span>
+                <span class="s0">if </span><span class="s1">ngram </span><span class="s0">not in </span><span class="s1">self._NgramModel__ngrams:</span>
+                    <span class="s1">self._NgramModel__ngrams[ngram] = </span><span class="s5">1</span>
+                <span class="s0">else</span><span class="s1">:</span>
+                    <span class="s1">self._NgramModel__ngrams[ngram] += </span><span class="s5">1</span>
+
+    <span class="s0">def </span><span class="s1">prob(self</span><span class="s0">, </span><span class="s1">context</span><span class="s0">, </span><span class="s1">char):</span>
+        <span class="s4">''' Returns the probability of char appearing after context '''</span>
+        <span class="s1">prob = </span><span class="s5">0</span>
+        <span class="s0">for </span><span class="s1">i </span><span class="s0">in </span><span class="s1">range(self._NgramModel__c + </span><span class="s5">1</span><span class="s1">):</span>
+            <span class="s1">prob_holder = super().prob(context[len(context) - i:]</span><span class="s0">, </span><span class="s1">char) * self.__lambdas[i]</span>
+            <span class="s1">prob += prob_holder</span>
+
+        <span class="s0">return </span><span class="s1">prob</span>
+
+
+
+    <span class="s2">################################################################################</span>
+<span class="s2"># Your N-Gram Model Experimentations</span>
+<span class="s2">################################################################################</span>
+
+
+<span class="s0">def </span><span class="s1">NgramModel_tests():</span>
+    <span class="s4">'''NgramModel class tests'''</span>
+    <span class="s1">m = NgramModel(</span><span class="s5">1</span><span class="s0">,</span><span class="s5">0</span><span class="s1">)</span>
+    <span class="s1">m.update(</span><span class="s3">'abab'</span><span class="s1">)</span>
+    <span class="s1">print(m.get_vocab())</span>
+    <span class="s1">m.update(</span><span class="s3">'abcd'</span><span class="s1">)</span>
+    <span class="s1">print(m.get_vocab())</span>
+    <span class="s1">print(m.prob(</span><span class="s3">'a'</span><span class="s0">, </span><span class="s3">'b'</span><span class="s1">)</span><span class="s0">, </span><span class="s3">'(expected: 1.0)'</span><span class="s1">)</span>
+    <span class="s1">print(m.prob(</span><span class="s3">'~'</span><span class="s0">, </span><span class="s3">'c'</span><span class="s1">)</span><span class="s0">, </span><span class="s3">'(expected: 0.0)'</span><span class="s1">)</span>
+    <span class="s1">print(m.prob(</span><span class="s3">'b'</span><span class="s0">, </span><span class="s3">'c'</span><span class="s1">)</span><span class="s0">, </span><span class="s3">'(expected: 0.5)'</span><span class="s1">)</span>
+    <span class="s1">random.seed(</span><span class="s5">1</span><span class="s1">)</span>
+    <span class="s1">print(m.random_text(</span><span class="s5">25</span><span class="s1">))</span>
+
+    <span class="s1">j = NgramModel(</span><span class="s5">0</span><span class="s0">, </span><span class="s5">0</span><span class="s1">)</span>
+    <span class="s1">j.update(</span><span class="s3">'abab'</span><span class="s1">)</span>
+    <span class="s1">j.update(</span><span class="s3">'abcd'</span><span class="s1">)</span>
+    <span class="s1">random.seed(</span><span class="s5">1</span><span class="s1">)</span>
+    <span class="s1">print([j.random_char(</span><span class="s3">''</span><span class="s1">) </span><span class="s0">for </span><span class="s1">i </span><span class="s0">in </span><span class="s1">range(</span><span class="s5">25</span><span class="s1">)])</span>
+
+    <span class="s1">n = NgramModel(</span><span class="s5">1</span><span class="s0">,</span><span class="s5">1</span><span class="s1">)</span>
+    <span class="s1">n.update(</span><span class="s3">'abab'</span><span class="s1">)</span>
+    <span class="s1">n.update(</span><span class="s3">'abcd'</span><span class="s1">)</span>
+    <span class="s1">print(n.prob(</span><span class="s3">'a'</span><span class="s0">, </span><span class="s3">'a'</span><span class="s1">)</span><span class="s0">, </span><span class="s3">'(expected: 0.14285714285714285)'</span><span class="s1">)</span>
+    <span class="s1">print(n.prob(</span><span class="s3">'a'</span><span class="s0">, </span><span class="s3">'b'</span><span class="s1">)</span><span class="s0">, </span><span class="s3">'(expected: 0.5714285714285714)'</span><span class="s1">)</span>
+    <span class="s1">print(n.prob(</span><span class="s3">'c'</span><span class="s0">, </span><span class="s3">'d'</span><span class="s1">)</span><span class="s0">, </span><span class="s3">'(expected: 0.4)'</span><span class="s1">)</span>
+    <span class="s1">print(n.prob(</span><span class="s3">'d'</span><span class="s0">, </span><span class="s3">'a'</span><span class="s1">)</span><span class="s0">, </span><span class="s3">'(expected: 0.25)'</span><span class="s1">)</span>
+
+    <span class="s1">d = NgramModel(</span><span class="s5">1</span><span class="s0">, </span><span class="s5">0</span><span class="s1">)</span>
+    <span class="s1">d.update(</span><span class="s3">'abab'</span><span class="s1">)</span>
+    <span class="s1">d.update(</span><span class="s3">'abcd'</span><span class="s1">)</span>
+    <span class="s1">print(d.perplexity(</span><span class="s3">'abcd'</span><span class="s1">)</span><span class="s0">, </span><span class="s3">'(expected: 1.189207115002721)'</span><span class="s1">)</span>
+    <span class="s1">print(d.perplexity(</span><span class="s3">'abca'</span><span class="s1">)</span><span class="s0">, </span><span class="s3">'(expected: inf)'</span><span class="s1">)</span>
+    <span class="s1">print(d.perplexity(</span><span class="s3">'abcda'</span><span class="s1">)</span><span class="s0">, </span><span class="s3">'(expected: 1.515716566510398)'</span><span class="s1">)</span>
+
+
+<span class="s0">def </span><span class="s1">NgramModel_Shakespeare_tests():</span>
+    <span class="s4">''' NgramModel class tests on Shakespeare text files'''</span>
+
+    <span class="s1">n = create_ngram_model(NgramModel</span><span class="s0">, </span><span class="s3">'shakespeare_input.txt'</span><span class="s0">, </span><span class="s5">2</span><span class="s1">)</span>
+    <span class="s1">print(n.random_text(</span><span class="s5">250</span><span class="s1">))</span>
+
+    <span class="s1">n = create_ngram_model(NgramModel</span><span class="s0">, </span><span class="s3">'shakespeare_input.txt'</span><span class="s0">, </span><span class="s5">3</span><span class="s1">)</span>
+    <span class="s1">print(n.random_text(</span><span class="s5">250</span><span class="s1">))</span>
+
+    <span class="s1">n = create_ngram_model(NgramModel</span><span class="s0">, </span><span class="s3">'shakespeare_input.txt'</span><span class="s0">, </span><span class="s5">4</span><span class="s1">)</span>
+    <span class="s1">print(n.random_text(</span><span class="s5">250</span><span class="s1">))</span>
+
+    <span class="s1">n = create_ngram_model(NgramModel</span><span class="s0">, </span><span class="s3">'shakespeare_input.txt'</span><span class="s0">, </span><span class="s5">7</span><span class="s1">)</span>
+    <span class="s1">print(n.random_text(</span><span class="s5">250</span><span class="s1">))</span>
+
+    <span class="s1">shakespeare = create_ngram_model(NgramModel</span><span class="s0">, </span><span class="s3">'shakespeare_input.txt'</span><span class="s0">, </span><span class="s5">2</span><span class="s1">)</span>
+    <span class="s1">shakespeare.set_k(</span><span class="s5">1</span><span class="s1">)</span>
+    <span class="s1">print(</span><span class="s3">'---k=1---c=2'</span><span class="s1">)</span>
+    <span class="s1">print(</span><span class="s3">&quot;shakes perp: &quot;</span><span class="s0">, </span><span class="s1">shakespeare.perplexity(</span><span class="s3">'shakespeare_input.txt'</span><span class="s1">))</span>
+    <span class="s1">print(</span><span class="s3">&quot;sonnets perp: &quot;</span><span class="s0">, </span><span class="s1">shakespeare.perplexity(</span><span class="s3">'shakespeare_sonnets.txt'</span><span class="s1">))</span>
+    <span class="s1">print(</span><span class="s3">&quot;nyt perp: &quot;</span><span class="s0">, </span><span class="s1">shakespeare.perplexity(</span><span class="s3">'nytimes_article.txt'</span><span class="s1">))</span>
+    <span class="s1">shakespeare.set_k(</span><span class="s5">2</span><span class="s1">)</span>
+    <span class="s1">print(</span><span class="s3">'---k=2---c=2'</span><span class="s1">)</span>
+    <span class="s1">print(</span><span class="s3">&quot;shakes perp: &quot;</span><span class="s0">, </span><span class="s1">shakespeare.perplexity(</span><span class="s3">'shakespeare_input.txt'</span><span class="s1">))</span>
+    <span class="s1">print(</span><span class="s3">&quot;sonnets perp: &quot;</span><span class="s0">, </span><span class="s1">shakespeare.perplexity(</span><span class="s3">'shakespeare_sonnets.txt'</span><span class="s1">))</span>
+    <span class="s1">print(</span><span class="s3">&quot;nyt perp: &quot;</span><span class="s0">, </span><span class="s1">shakespeare.perplexity(</span><span class="s3">'nytimes_article.txt'</span><span class="s1">))</span>
+    <span class="s1">shakespeare.set_k(</span><span class="s5">3</span><span class="s1">)</span>
+    <span class="s1">print(</span><span class="s3">'---k=3---c=2'</span><span class="s1">)</span>
+    <span class="s1">print(</span><span class="s3">&quot;shakes perp: &quot;</span><span class="s0">, </span><span class="s1">shakespeare.perplexity(</span><span class="s3">'shakespeare_input.txt'</span><span class="s1">))</span>
+    <span class="s1">print(</span><span class="s3">&quot;sonnets perp: &quot;</span><span class="s0">, </span><span class="s1">shakespeare.perplexity(</span><span class="s3">'shakespeare_sonnets.txt'</span><span class="s1">))</span>
+    <span class="s1">print(</span><span class="s3">&quot;nyt perp: &quot;</span><span class="s0">, </span><span class="s1">shakespeare.perplexity(</span><span class="s3">'nytimes_article.txt'</span><span class="s1">))</span>
+    <span class="s1">shakespeare.set_k(</span><span class="s5">4</span><span class="s1">)</span>
+    <span class="s1">print(</span><span class="s3">'---k=4---c=2'</span><span class="s1">)</span>
+    <span class="s1">print(</span><span class="s3">&quot;shakes perp: &quot;</span><span class="s0">, </span><span class="s1">shakespeare.perplexity(</span><span class="s3">'shakespeare_input.txt'</span><span class="s1">))</span>
+    <span class="s1">print(</span><span class="s3">&quot;sonnets perp: &quot;</span><span class="s0">, </span><span class="s1">shakespeare.perplexity(</span><span class="s3">'shakespeare_sonnets.txt'</span><span class="s1">))</span>
+    <span class="s1">print(</span><span class="s3">&quot;nyt perp: &quot;</span><span class="s0">, </span><span class="s1">shakespeare.perplexity(</span><span class="s3">'nytimes_article.txt'</span><span class="s1">))</span>
+
+    <span class="s1">shakespeare2 = create_ngram_model(NgramModel</span><span class="s0">, </span><span class="s3">'shakespeare_input.txt'</span><span class="s0">, </span><span class="s5">3</span><span class="s1">)</span>
+    <span class="s1">shakespeare2.set_k(</span><span class="s5">1</span><span class="s1">)</span>
+    <span class="s1">print(</span><span class="s3">'---k=1---c=3'</span><span class="s1">)</span>
+    <span class="s1">print(</span><span class="s3">&quot;shakes perp: &quot;</span><span class="s0">, </span><span class="s1">shakespeare2.perplexity(</span><span class="s3">'shakespeare_input.txt'</span><span class="s1">))</span>
+    <span class="s1">print(</span><span class="s3">&quot;sonnets perp: &quot;</span><span class="s0">, </span><span class="s1">shakespeare2.perplexity(</span><span class="s3">'shakespeare_sonnets.txt'</span><span class="s1">))</span>
+    <span class="s1">print(</span><span class="s3">&quot;nyt perp: &quot;</span><span class="s0">, </span><span class="s1">shakespeare2.perplexity(</span><span class="s3">'nytimes_article.txt'</span><span class="s1">))</span>
+    <span class="s1">shakespeare2.set_k(</span><span class="s5">2</span><span class="s1">)</span>
+    <span class="s1">print(</span><span class="s3">'---k=2---c=3'</span><span class="s1">)</span>
+    <span class="s1">print(</span><span class="s3">&quot;shakes perp: &quot;</span><span class="s0">, </span><span class="s1">shakespeare2.perplexity(</span><span class="s3">'shakespeare_input.txt'</span><span class="s1">))</span>
+    <span class="s1">print(</span><span class="s3">&quot;sonnets perp: &quot;</span><span class="s0">, </span><span class="s1">shakespeare2.perplexity(</span><span class="s3">'shakespeare_sonnets.txt'</span><span class="s1">))</span>
+    <span class="s1">print(</span><span class="s3">&quot;nyt perp: &quot;</span><span class="s0">, </span><span class="s1">shakespeare2.perplexity(</span><span class="s3">'nytimes_article.txt'</span><span class="s1">))</span>
+    <span class="s1">shakespeare2.set_k(</span><span class="s5">3</span><span class="s1">)</span>
+    <span class="s1">print(</span><span class="s3">'---k=3---c=3'</span><span class="s1">)</span>
+    <span class="s1">print(</span><span class="s3">&quot;shakes perp: &quot;</span><span class="s0">, </span><span class="s1">shakespeare2.perplexity(</span><span class="s3">'shakespeare_input.txt'</span><span class="s1">))</span>
+    <span class="s1">print(</span><span class="s3">&quot;sonnets perp: &quot;</span><span class="s0">, </span><span class="s1">shakespeare2.perplexity(</span><span class="s3">'shakespeare_sonnets.txt'</span><span class="s1">))</span>
+    <span class="s1">print(</span><span class="s3">&quot;nyt perp: &quot;</span><span class="s0">, </span><span class="s1">shakespeare2.perplexity(</span><span class="s3">'nytimes_article.txt'</span><span class="s1">))</span>
+    <span class="s1">shakespeare2.set_k(</span><span class="s5">4</span><span class="s1">)</span>
+    <span class="s1">print(</span><span class="s3">'---k=4---c=3'</span><span class="s1">)</span>
+    <span class="s1">print(</span><span class="s3">&quot;shakes perp: &quot;</span><span class="s0">, </span><span class="s1">shakespeare2.perplexity(</span><span class="s3">'shakespeare_input.txt'</span><span class="s1">))</span>
+    <span class="s1">print(</span><span class="s3">&quot;sonnets perp: &quot;</span><span class="s0">, </span><span class="s1">shakespeare2.perplexity(</span><span class="s3">'shakespeare_sonnets.txt'</span><span class="s1">))</span>
+    <span class="s1">print(</span><span class="s3">&quot;nyt perp: &quot;</span><span class="s0">, </span><span class="s1">shakespeare2.perplexity(</span><span class="s3">'nytimes_article.txt'</span><span class="s1">))</span>
+
+
+<span class="s0">def </span><span class="s1">NgramModelInterpolation_tests():</span>
+    <span class="s4">'''NgramModelInterpolation class tests'''</span>
+    <span class="s1">g = NgramModelWithInterpolation(</span><span class="s5">1</span><span class="s0">, </span><span class="s5">0</span><span class="s1">)</span>
+    <span class="s1">g.update(</span><span class="s3">'abab'</span><span class="s1">)</span>
+    <span class="s1">print(g.prob(</span><span class="s3">'a'</span><span class="s0">, </span><span class="s3">'a'</span><span class="s1">)</span><span class="s0">, </span><span class="s3">'(expected: 0.25)'</span><span class="s1">)</span>
+    <span class="s1">print(g.prob(</span><span class="s3">'a'</span><span class="s0">, </span><span class="s3">'b'</span><span class="s1">)</span><span class="s0">, </span><span class="s3">'(expected: 0.75)'</span><span class="s1">)</span>
+    <span class="s1">g.update_lambdas([</span><span class="s5">0.25</span><span class="s0">, </span><span class="s5">0.25</span><span class="s1">])</span>
+    <span class="s1">print(g.prob(</span><span class="s3">'a'</span><span class="s0">, </span><span class="s3">'a'</span><span class="s1">))</span>
+    <span class="s1">print(g.prob(</span><span class="s3">'a'</span><span class="s0">, </span><span class="s3">'b'</span><span class="s1">))</span>
+    <span class="s1">g.update_lambdas([</span><span class="s5">0.2</span><span class="s0">, </span><span class="s5">0.3</span><span class="s1">])</span>
+    <span class="s1">print(g.prob(</span><span class="s3">'a'</span><span class="s0">, </span><span class="s3">'a'</span><span class="s1">))</span>
+    <span class="s1">print(g.prob(</span><span class="s3">'a'</span><span class="s0">, </span><span class="s3">'b'</span><span class="s1">))</span>
+
+    <span class="s1">p = NgramModelWithInterpolation(</span><span class="s5">2</span><span class="s0">, </span><span class="s5">1</span><span class="s1">)</span>
+    <span class="s1">p.update(</span><span class="s3">'abab'</span><span class="s1">)</span>
+    <span class="s1">p.update(</span><span class="s3">'abcd'</span><span class="s1">)</span>
+    <span class="s1">print(p.prob(</span><span class="s3">'~a'</span><span class="s0">, </span><span class="s3">'b'</span><span class="s1">)</span><span class="s0">, </span><span class="s3">'(expected: 0.4682539682539682)'</span><span class="s1">)</span>
+    <span class="s1">print(p.prob(</span><span class="s3">'ba'</span><span class="s0">, </span><span class="s3">'b'</span><span class="s1">)</span><span class="s0">, </span><span class="s3">'(expected: 0.4349206349206349)'</span><span class="s1">)</span>
+    <span class="s1">print(p.prob(</span><span class="s3">'~c'</span><span class="s0">, </span><span class="s3">'d'</span><span class="s1">)</span><span class="s0">, </span><span class="s3">'(expected: 0.27222222222222225)'</span><span class="s1">)</span>
+    <span class="s1">print(p.prob(</span><span class="s3">'bc'</span><span class="s0">, </span><span class="s3">'d'</span><span class="s1">)</span><span class="s0">, </span><span class="s3">'(expected: 0.3222222222222222)'</span><span class="s1">)</span>
+
+
+<span class="s0">def </span><span class="s1">LanguageIdentification_tests():</span>
+    <span class="s4">'''Language identification models tests'''</span>
+    <span class="s1">af = create_ngram_model_lines(NgramModel</span><span class="s0">, </span><span class="s3">'train/af.txt'</span><span class="s1">)</span>
+    <span class="s1">cn = create_ngram_model_lines(NgramModel</span><span class="s0">, </span><span class="s3">'train/cn.txt'</span><span class="s1">)</span>
+    <span class="s1">de = create_ngram_model_lines(NgramModel</span><span class="s0">, </span><span class="s3">'train/de.txt'</span><span class="s1">)</span>
+    <span class="s1">fi = create_ngram_model_lines(NgramModel</span><span class="s0">, </span><span class="s3">'train/fi.txt'</span><span class="s1">)</span>
+    <span class="s1">fr = create_ngram_model_lines(NgramModel</span><span class="s0">, </span><span class="s3">'train/fr.txt'</span><span class="s1">)</span>
+    <span class="s1">ind = create_ngram_model_lines(NgramModel</span><span class="s0">, </span><span class="s3">'train/in.txt'</span><span class="s1">)</span>
+    <span class="s1">ir = create_ngram_model_lines(NgramModel</span><span class="s0">, </span><span class="s3">'train/ir.txt'</span><span class="s1">)</span>
+    <span class="s1">pk = create_ngram_model_lines(NgramModel</span><span class="s0">, </span><span class="s3">'train/pk.txt'</span><span class="s1">)</span>
+    <span class="s1">za = create_ngram_model_lines(NgramModel</span><span class="s0">, </span><span class="s3">'train/za.txt'</span><span class="s1">)</span>
+
+    <span class="s1">country_codes = {af: </span><span class="s3">'af'</span><span class="s0">, </span><span class="s1">cn: </span><span class="s3">'cn'</span><span class="s0">, </span><span class="s1">de: </span><span class="s3">'de'</span><span class="s0">, </span><span class="s1">fi: </span><span class="s3">'fi'</span><span class="s0">, </span><span class="s1">fr: </span><span class="s3">'fr'</span><span class="s0">, </span><span class="s1">ind: </span><span class="s3">'in'</span><span class="s0">,</span>
+                         <span class="s1">ir: </span><span class="s3">'ir'</span><span class="s0">, </span><span class="s1">pk: </span><span class="s3">'pk'</span><span class="s0">, </span><span class="s1">za: </span><span class="s3">'za'</span><span class="s1">}</span>
+
+    <span class="s1">val_texts = {</span><span class="s3">'val/af.txt'</span><span class="s1">: </span><span class="s3">'af'</span><span class="s0">, </span><span class="s3">'val/cn.txt'</span><span class="s1">: </span><span class="s3">'cn'</span><span class="s0">, </span><span class="s3">'val/de.txt'</span><span class="s1">: </span><span class="s3">'de'</span><span class="s0">, </span><span class="s3">'val/fi.txt'</span><span class="s1">: </span><span class="s3">'fi'</span><span class="s0">,</span>
+                 <span class="s3">'val/fr.txt'</span><span class="s1">: </span><span class="s3">'fr'</span><span class="s0">, </span><span class="s3">'val/in.txt'</span><span class="s1">: </span><span class="s3">'in'</span><span class="s0">, </span><span class="s3">'val/ir.txt'</span><span class="s1">: </span><span class="s3">'ir'</span><span class="s0">, </span><span class="s3">'val/pk.txt'</span><span class="s1">: </span><span class="s3">'pk'</span><span class="s0">,</span>
+                 <span class="s3">'val/za.txt'</span><span class="s1">: </span><span class="s3">'za'</span><span class="s1">}</span>
+
+    <span class="s1">val_accuracies = {</span><span class="s3">'val/af.txt'</span><span class="s1">: </span><span class="s5">0</span><span class="s0">, </span><span class="s3">'val/cn.txt'</span><span class="s1">: </span><span class="s5">0</span><span class="s0">, </span><span class="s3">'val/de.txt'</span><span class="s1">: </span><span class="s5">0</span><span class="s0">, </span><span class="s3">'val/fi.txt'</span><span class="s1">: </span><span class="s5">0</span><span class="s0">,</span>
+                      <span class="s3">'val/fr.txt'</span><span class="s1">: </span><span class="s5">0</span><span class="s0">, </span><span class="s3">'val/in.txt'</span><span class="s1">: </span><span class="s5">0</span><span class="s0">, </span><span class="s3">'val/ir.txt'</span><span class="s1">: </span><span class="s5">0</span><span class="s0">, </span><span class="s3">'val/pk.txt'</span><span class="s1">: </span><span class="s5">0</span><span class="s0">,</span>
+                      <span class="s3">'val/za.txt'</span><span class="s1">: </span><span class="s5">0</span><span class="s1">}</span>
+
+    <span class="s0">for </span><span class="s1">val_txt </span><span class="s0">in </span><span class="s1">val_texts.keys():</span>
+        <span class="s1">predicted_correct = </span><span class="s5">0</span>
+        <span class="s1">actual_total = </span><span class="s5">0</span>
+        <span class="s1">correct_country = val_texts[val_txt]</span>
+        <span class="s1">file = open(val_txt</span><span class="s0">, </span><span class="s3">'r'</span><span class="s1">)</span>
+        <span class="s1">cities = file.read().splitlines()</span>
+        <span class="s0">for </span><span class="s1">city </span><span class="s0">in </span><span class="s1">cities:</span>
+            <span class="s1">actual_total += </span><span class="s5">1</span>
+            <span class="s1">highest_prob = </span><span class="s5">0</span>
+            <span class="s1">highest_prob_country = </span><span class="s3">''</span>
+            <span class="s0">for </span><span class="s1">model </span><span class="s0">in </span><span class="s1">country_codes.keys():</span>
+                <span class="s1">current_prob = model.prob_str(city)</span>
+                <span class="s0">if </span><span class="s1">current_prob != float(</span><span class="s3">'inf'</span><span class="s1">):</span>
+                    <span class="s0">if </span><span class="s1">(abs(current_prob) &lt; abs(highest_prob)) </span><span class="s0">or </span><span class="s1">highest_prob == </span><span class="s5">0</span><span class="s1">:</span>
+                        <span class="s1">highest_prob = current_prob</span>
+                        <span class="s1">highest_prob_country = country_codes[model]</span>
+                <span class="s0">elif </span><span class="s1">highest_prob == </span><span class="s5">0</span><span class="s1">:</span>
+                    <span class="s1">highest_prob_country = country_codes[model]</span>
+            <span class="s0">if </span><span class="s1">highest_prob_country == correct_country:</span>
+                <span class="s1">predicted_correct += </span><span class="s5">1</span>
+        <span class="s1">accuracy = predicted_correct / actual_total</span>
+        <span class="s1">val_accuracies[val_txt] = accuracy</span>
+
+    <span class="s1">print(val_accuracies)</span>
+
+
+<span class="s0">if </span><span class="s1">__name__ == </span><span class="s3">&quot;__main__&quot;</span><span class="s1">:</span>
+
+    <span class="s1">NgramModel_tests()</span>
+    <span class="s1">NgramModel_Shakespeare_tests()</span>
+    <span class="s1">NgramModelInterpolation_tests()</span>
+    <span class="s1">LanguageIdentification_tests()</span>
+
+
+
+</pre>
+</body>
+</html>
